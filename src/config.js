@@ -9,7 +9,7 @@
 // Webhook del escenario "Jarvis - Acciones" en Make
 export const WEBHOOK_URL =
   import.meta.env.VITE_MAKE_WEBHOOK_URL ||
-  'https://hook.us1.make.com/nn7hbmyck4flfynd75w433vo76g8lwrl';
+  'https://hook.us2.make.com/0f48ralthjnc5fvijwrp0ohnxjlfdn1l';
 
 // Key de Groq: transcripción (Whisper) + clasificador + charla.
 // SIN valor de respaldo a propósito: si se commitea una key a un
