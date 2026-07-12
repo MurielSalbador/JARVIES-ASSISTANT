@@ -971,3 +971,147 @@ body {
   }
 }
 
+/* ============================================================
+   MÓVIL (≤820px) — el escenario fijo 1920x1080 deja de escalar
+   y pasa a ser una columna vertical scrolleable. Ninguna regla
+   de acá afecta al diseño de escritorio (queda intacto arriba).
+   ============================================================ */
+@media (max-width: 820px) {
+  html, body, #root { height: auto; min-height: 100%; }
+  body { overflow-y: auto; overflow-x: hidden; }
+
+  .visor { position: static; min-height: 100vh; }
+
+  /* El escenario abandona el tamaño fijo y la escala JS (inline) */
+  .escenario {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100%;
+    height: auto;
+    transform: none !important;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 10px 14px 130px; /* aire abajo para la barra fija */
+  }
+
+  .bloom { display: none; }
+
+  /* --- Tira superior: fluye y envuelve --- */
+  .tira-sup {
+    position: static;
+    order: 0;
+    height: auto;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    padding: 8px 10px;
+    margin: -10px -14px 0; /* pegada a los bordes del viewport */
+    white-space: normal;
+    font-size: 9px;
+  }
+  .empuje { margin-left: 0; }
+
+  /* --- Reactor primero: título, núcleo, lectura y transcript --- */
+  .titulo-core {
+    position: static;
+    order: 1;
+    transform: none;
+    margin-top: 4px;
+  }
+  .core-nombre { font-size: 20px; letter-spacing: 6px; }
+
+  .zona-reactor {
+    position: relative;
+    order: 2;
+    left: auto;
+    top: auto;
+    width: 640px;
+    height: 640px;
+    flex: none;
+    transform: scale(0.5);
+    transform-origin: center center;
+    /* el box sigue midiendo 640x640: los márgenes negativos
+       recortan el sobrante y lo centran en la columna */
+    margin: -155px calc(50% - 320px);
+  }
+
+  .lectura-reactor {
+    position: static;
+    order: 3;
+    transform: none;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  .transcript {
+    position: static;
+    order: 4;
+    transform: none;
+    width: 100%;
+    font-size: 13px;
+  }
+
+  /* --- Paneles: ancho completo, apilados --- */
+  .p-consola, .p-red, .p-audio, .p-reloj, .p-feed {
+    position: relative;
+    left: auto;
+    top: auto;
+    width: 100%;
+    flex: none;
+  }
+  .p-consola { order: 5; height: 320px; }
+  .p-red     { order: 6; height: 170px; }
+  .p-audio   { order: 7; height: 120px; }
+  .p-reloj   { order: 8; height: auto; padding: 16px 12px; }
+  .p-feed    { order: 9; height: 150px; }
+
+  .p-consola .trazas { display: none; }
+  .consola { font-size: 13px; }
+
+  .reloj-hms { font-size: 50px; }
+  .reloj-seg { font-size: 20px; }
+  .reloj-fecha { letter-spacing: 4px; }
+  .reloj-fila { flex-wrap: wrap; gap: 16px; }
+
+  /* --- Bloque izquierdo (globo / geo / sensores) al final --- */
+  .bloque-globo {
+    position: static;
+    order: 10;
+    width: 158px;
+    margin: 6px auto 0;
+  }
+  .bloque-geo {
+    position: static;
+    order: 11;
+    text-align: center;
+  }
+  .bloque-sensores {
+    position: static;
+    order: 12;
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+  }
+
+  /* --- Barra de tareas fija abajo --- */
+  .barra-tareas {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+    z-index: 30;
+  }
+  .bt-logo, .bt-boton { width: 34px; height: 34px; }
+  .cmd { flex: 1 1 150px; height: 40px; margin-left: 0; }
+  .cmd-prompt, .cmd input { font-size: 14px; }
+  .bt-enviar { height: 40px; padding: 0 14px; font-size: 10px; letter-spacing: 0.15em; }
+  .bt-dato, .bt-sep, .bt-hora, .bt-fecha { display: none; }
+}
+
