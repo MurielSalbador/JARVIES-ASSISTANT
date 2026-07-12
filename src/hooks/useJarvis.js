@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { WEBHOOK_URL, GROQ_API_KEY, IDIOMA } from '../config';
+import { WEBHOOK_URL, GROQ_API_KEY, IDIOMA, PERSONALIDAD } from '../config';
 
 export const ESTADOS = {
   STANDBY: 'STANDBY',
@@ -8,12 +8,15 @@ export const ESTADOS = {
   HABLANDO: 'HABLANDO',
 };
 
+const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const MODELO = 'openai/gpt-oss-120b';
+
 const CLAVE_HISTORIAL = 'jarvis_historial';
 const MAX_GUARDADOS = 40;   // mensajes que persisten en localStorage
-const MAX_ENVIADOS = 12;    // mensajes que viajan a Make en cada pedido
+const MAX_ENVIADOS = 12;    // mensajes de contexto por pedido
 const DEBOUNCE_MS = 350;    // ignora toques repetidos (tecla mantenida, doble click)
 
-// --- Detección de voz por volumen (ya no dependemos de Google) ---
+// --- Detección de voz por volumen ---
 const UMBRAL_VOZ = 0.028;            // sensibilidad: subilo si detecta ruido de fondo como voz
 const SILENCIO_TRAS_HABLA_MS = 2200; // 2,2 s callado después de hablar -> envía solo
 const ESPERA_SIN_VOZ_MS = 15000;     // 15 s sin detectar voz -> corta
@@ -36,9 +39,9 @@ export function useJarvis() {
   const [transcript, setTranscript] = useState('');
   const [historial, setHistorial] = useState(cargarHistorial);
   const [log, setLog] = useState([
-    { quien: 'SISTEMA', texto: 'J.A.R.V.I.S. en línea. Voz local + Whisper (Groq) activos.', hora: hora() },
+    { quien: 'SISTEMA', texto: 'J.A.R.V.I.S. en línea. Cerebro local activo, Make solo para acciones.', hora: hora() },
   ]);
-  // Estado real del enlace con Make: peticiones hechas, latencia medida, resultado
+  // Estado del enlace con Make (solo cuenta llamadas de ACCIONES)
   const [red, setRed] = useState({ peticiones: 0, latencia: null, uplink: 'SIN TRÁFICO' });
 
   const detenerRef = useRef(null);
@@ -75,15 +78,10 @@ export function useJarvis() {
         };
         try {
           window.speechSynthesis.cancel();
-          // Chrome necesita un respiro entre cancel() y speak(),
-          // si no a veces se traga la frase sin avisar.
           setTimeout(() => {
             if (resuelto) return;
             const u = new SpeechSynthesisUtterance(texto);
             const voces = window.speechSynthesis.getVoices();
-            // Voces masculinas en español según el sistema:
-            // Windows (Raul, Pablo), Edge natural (Alvaro, Jorge, Dario),
-            // macOS (Diego, Jorge, Juan, Carlos), Android (male)
             const MASCULINAS = /alvaro|jorge|raul|raúl|pablo|dario|darío|diego|juan|carlos|andres|andrés|enrique|gonzalo|male/i;
             const esMasculina = (v) => MASCULINAS.test(v.name);
             const esEspanol = (v) => v.lang && v.lang.startsWith('es');
@@ -96,18 +94,15 @@ export function useJarvis() {
             if (voz) u.voice = voz;
             u.lang = voz ? voz.lang : IDIOMA;
             u.rate = 1.02;
-            // Grave y pausado, al estilo J.A.R.V.I.S.
             u.pitch = 0.72;
             u.onend = terminar;
             u.onerror = terminar;
             window.speechSynthesis.speak(u);
-            // Chrome pausa la síntesis a los ~15 s: resume periódico lo evita
             latido = setInterval(() => {
               if (!window.speechSynthesis.speaking) terminar();
               else window.speechSynthesis.resume();
             }, 4000);
           }, 90);
-          // Red de seguridad: pase lo que pase, el estado nunca queda trabado
           const maxMs = Math.min(30000, 4000 + texto.length * 90);
           setTimeout(terminar, maxMs);
         } catch (e) {
@@ -117,7 +112,88 @@ export function useJarvis() {
     []
   );
 
-  // ---- Enviar pregunta al cerebro (webhook de Make -> Groq) ----
+  // ---- Llamada genérica a Groq (chat) desde el navegador ----
+  const groqChat = useCallback(async (messages, opciones = {}) => {
+    const r = await fetch(GROQ_CHAT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + GROQ_API_KEY,
+      },
+      body: JSON.stringify({
+        model: MODELO,
+        messages,
+        temperature: opciones.temperature ?? 0.7,
+        max_tokens: opciones.max_tokens ?? 500,
+      }),
+    });
+    if (!r.ok) throw new Error('Groq HTTP ' + r.status);
+    const j = await r.json();
+    return ((j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '').trim();
+  }, []);
+
+  // ---- Clasificador de intenciones (corre en el navegador, gratis) ----
+  const clasificar = useCallback(
+    async (texto) => {
+      try {
+        const salida = await groqChat(
+          [
+            {
+              role: 'system',
+              content:
+                'Sos un clasificador de intenciones. Leé el pedido del usuario (y el contexto previo si existe) y respondé con UNA SOLA palabra en mayúsculas: CLIMA si pregunta por el clima, el tiempo, la temperatura, la lluvia, el viento o el pronóstico. BUSCAR si pide información actual de internet: noticias, precios, cotizaciones, resultados deportivos, datos de personas, empresas o eventos, si dice buscá o buscame, o cualquier dato que cambie con el tiempo o que un modelo de lenguaje no sepa con certeza. CHARLA para todo lo demás. No agregues nada más que la palabra.',
+            },
+            ...historialRef.current.slice(-6),
+            { role: 'user', content: texto },
+          ],
+          { temperature: 0, max_tokens: 300 }
+        );
+        const s = salida.toUpperCase();
+        if (s.includes('CLIMA')) return 'CLIMA';
+        if (s.includes('BUSCAR')) return 'BUSCAR';
+        return 'CHARLA';
+      } catch (e) {
+        return 'CHARLA'; // si el clasificador falla, al menos conversa
+      }
+    },
+    [groqChat]
+  );
+
+  // ---- Charla directa (navegador -> Groq, 0 operaciones de Make) ----
+  const charlar = useCallback(
+    (texto) =>
+      groqChat(
+        [
+          { role: 'system', content: PERSONALIDAD },
+          ...historialRef.current.slice(-MAX_ENVIADOS),
+          { role: 'user', content: texto },
+        ],
+        { temperature: 0.85 }
+      ),
+    [groqChat]
+  );
+
+  // ---- Acciones (navegador -> Make, con la intención ya resuelta) ----
+  const accionMake = useCallback(async (texto, intencion) => {
+    const previos = historialRef.current.slice(-MAX_ENVIADOS);
+    const historialStr =
+      previos.map((m) => JSON.stringify(m)).join(',') + (previos.length ? ',' : '');
+    const t0 = performance.now();
+    const r = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      body: new URLSearchParams({ texto, historial: historialStr, intencion }),
+    });
+    const respuesta = (await r.text()).trim();
+    const latencia = Math.round(performance.now() - t0);
+    setRed((s) => ({
+      peticiones: s.peticiones + 1,
+      latencia,
+      uplink: r.ok ? 'OK · ' + latencia + 'ms' : 'HTTP ' + r.status,
+    }));
+    return respuesta;
+  }, []);
+
+  // ---- Orquestador: clasifica y decide adónde va cada pedido ----
   const preguntar = useCallback(
     async (texto) => {
       const limpio = (texto || '').trim();
@@ -125,27 +201,15 @@ export function useJarvis() {
       setEstado(ESTADOS.PROCESANDO);
       addLog('VOS', limpio);
 
-      // El texto va embebido en un JSON del lado de Make
       const sanitizado = limpio.replace(/"/g, "'").replace(/\r?\n/g, ' ');
-      // Fragmentos JSON separados por coma y CON coma final (contrato del escenario)
-      const previos = historialRef.current.slice(-MAX_ENVIADOS);
-      const historialStr =
-        previos.map((m) => JSON.stringify(m)).join(',') +
-        (previos.length ? ',' : '');
-
+      let respuesta = '';
       try {
-        const t0 = performance.now();
-        const r = await fetch(WEBHOOK_URL, {
-          method: 'POST',
-          body: new URLSearchParams({ texto: sanitizado, historial: historialStr }),
-        });
-        const respuesta = (await r.text()).trim();
-        const latencia = Math.round(performance.now() - t0);
-        setRed((s) => ({
-          peticiones: s.peticiones + 1,
-          latencia,
-          uplink: r.ok ? 'OK · ' + latencia + 'ms' : 'HTTP ' + r.status,
-        }));
+        const intencion = await clasificar(sanitizado);
+        if (intencion === 'CHARLA') {
+          respuesta = await charlar(sanitizado);
+        } else {
+          respuesta = await accionMake(sanitizado, intencion);
+        }
         if (respuesta) {
           setHistorial((h) =>
             [
@@ -158,15 +222,14 @@ export function useJarvis() {
           setEstado(ESTADOS.HABLANDO);
           await hablar(respuesta);
         } else {
-          addLog('SISTEMA', 'Make respondió vacío. Revisá el escenario.');
+          addLog('SISTEMA', 'Respuesta vacía. Revisá el escenario de Make o la key de Groq.');
         }
       } catch (e) {
-        setRed((s) => ({ ...s, peticiones: s.peticiones + 1, uplink: 'ERROR' }));
-        addLog('SISTEMA', 'Error de conexión con Make: ' + e.message);
+        addLog('SISTEMA', 'Error: ' + e.message);
       }
       setEstado(ESTADOS.STANDBY);
     },
-    [addLog, hablar]
+    [addLog, clasificar, charlar, accionMake, hablar]
   );
 
   // ---- Borrar la memoria de conversación ----
@@ -175,12 +238,12 @@ export function useJarvis() {
     try {
       localStorage.removeItem(CLAVE_HISTORIAL);
     } catch (e) {
-      /* sin acceso a localStorage: alcanza con limpiar el estado */
+      /* sin acceso a localStorage */
     }
     addLog('SISTEMA', 'Memoria de conversación purgada.');
   }, [addLog]);
 
-  // ---- Transcripción con Whisper en Groq (reemplaza al servicio de Google) ----
+  // ---- Transcripción con Whisper en Groq ----
   const transcribir = useCallback(
     async (blob) => {
       try {
@@ -201,8 +264,8 @@ export function useJarvis() {
         }
         const j = await r.json();
         const texto = (j.text || '').trim();
-// Whisper a veces escribe mal el nombre: lo normalizamos
-return texto.replace(/\b(harv(i|ie)s?|jarbis|yarvis|jervis|j[aá]rbiz|charvis)\b/gi, 'Jarvis');
+        // Whisper a veces escribe mal el nombre: lo normalizamos
+        return texto.replace(/\b(harv(i|ie)s?|jarbis|yarvis|jervis|j[aá]rbiz|charvis)\b/gi, 'Jarvis');
       } catch (e) {
         addLog('SISTEMA', 'Error transcribiendo con Groq: ' + e.message);
         return '';
@@ -212,15 +275,11 @@ return texto.replace(/\b(harv(i|ie)s?|jarbis|yarvis|jervis|j[aá]rbiz|charvis)\b
   );
 
   // ---- Micrófono: grabación local + detección de silencio por volumen ----
-  // Ya NO usa el reconocimiento de Chrome/Google (el del error "network"):
-  // graba el audio en tu compu y lo transcribe Whisper en Groq.
   const escuchar = useCallback(async () => {
-    // Debounce global: tecla mantenida, doble click, click+espacio
     const ahora = Date.now();
     if (ahora - ultimoToqueRef.current < DEBOUNCE_MS) return;
     ultimoToqueRef.current = ahora;
 
-    // Escape: si quedó hablando, un toque corta la voz y libera el estado
     if (estadoRef.current === ESTADOS.HABLANDO) {
       try { window.speechSynthesis.cancel(); } catch (e) { /* sin voz activa */ }
       setEstado(ESTADOS.STANDBY);
@@ -228,7 +287,6 @@ return texto.replace(/\b(harv(i|ie)s?|jarbis|yarvis|jervis|j[aá]rbiz|charvis)\b
     }
     if (estadoRef.current === ESTADOS.PROCESANDO) return;
 
-    // Segundo toque mientras graba: corta y envía lo que haya
     if (estadoRef.current === ESTADOS.ESCUCHANDO) {
       if (detenerRef.current) detenerRef.current();
       return;
@@ -247,7 +305,6 @@ return texto.replace(/\b(harv(i|ie)s?|jarbis|yarvis|jervis|j[aá]rbiz|charvis)\b
       return;
     }
 
-    // Grabador
     const mime =
       window.MediaRecorder && MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
         ? 'audio/webm;codecs=opus'
@@ -267,7 +324,6 @@ return texto.replace(/\b(harv(i|ie)s?|jarbis|yarvis|jervis|j[aá]rbiz|charvis)\b
       if (ev.data && ev.data.size > 0) pedazos.push(ev.data);
     };
 
-    // Medidor de volumen para saber cuándo hablás y cuándo te callás
     let ctxAudio = null;
     let analizador = null;
     let buffer = null;
@@ -326,7 +382,7 @@ return texto.replace(/\b(harv(i|ie)s?|jarbis|yarvis|jervis|j[aá]rbiz|charvis)\b
       setTranscript('');
 
       if (!huboVoz) {
-        addLog('SISTEMA', 'No detecté voz. Si estabas hablando, revisá qué micrófono usa el navegador (candado → Micrófono) o bajá UMBRAL_VOZ en useJarvis.js.');
+        addLog('SISTEMA', 'No detecté voz. Revisá qué micrófono usa el navegador (candado → Micrófono) o bajá UMBRAL_VOZ en useJarvis.js.');
         setEstado(ESTADOS.STANDBY);
         return;
       }

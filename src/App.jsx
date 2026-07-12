@@ -13,6 +13,7 @@ import { MiniGraph, AudioWave, Gauge } from './components/Graphs';
 import { useJarvis, ESTADOS } from './hooks/useJarvis';
 import { useSystemMetrics } from './hooks/useSystemMetrics';
 import { useAudioAnalyser } from './hooks/useAudioAnalyser';
+import { useWakeWord } from './hooks/useWakeWord';
 import { OPERADOR } from './config';
 
 // ============================================================
@@ -64,6 +65,8 @@ export default function App() {
     useJarvis();
   const sys = useSystemMetrics();
   const { analyserRef, micActivo, sampleHz } = useAudioAnalyser(estado === ESTADOS.ESCUCHANDO);
+  const [modoJarvis, setModoJarvis] = useState(false);
+  const estadoWake = useWakeWord(modoJarvis && estado === ESTADOS.STANDBY, escuchar);
 
   const [entrada, setEntrada] = useState('');
   const [verGrilla, setVerGrilla] = useState(true);
@@ -374,6 +377,13 @@ export default function App() {
           </button>
           <button className="bt-boton" onClick={enviarTexto} title="Transmitir orden escrita">
             <Icono tipo="terminal" />
+          </button>
+          <button
+            className={'bt-boton' + (modoJarvis ? ' activo' : '')}
+            onClick={() => setModoJarvis((v) => !v)}
+            title={'Modo Jarvis (wake word): ' + estadoWake}
+          >
+            <Icono tipo="reticula" />
           </button>
           <div className="cmd">
             <span className="cmd-prompt">&gt;_</span>
