@@ -1,0 +1,973 @@
+/* ============================================================
+   J.A.R.V.I.S. HUD — réplica del diseño de referencia.
+   Escenario fijo 1920x1080 con escala UNIFORME (sin deformar).
+   Zonas: sensores (izq) · reactor (centro-izq) · consola de
+   misión (centro) · red/audio/reloj (der) · FEED · barra inferior.
+   Tokens: cian #4ad6ff/#8fe0ff sobre azul-negro #04070f,
+   Orbitron (display) + Share Tech Mono (datos).
+   ============================================================ */
+
+:root {
+  --fondo: #04070f;
+  --texto: #bfe6ff;
+  --cian: #4ad6ff;
+  --cian-claro: #8fe0ff;
+  --cian-medio: #56c8ff;
+  --dim: #5fa8d4;
+  --apagado: #4a86ab;
+  --verde: #5fe3a0;
+  --rojo: #ff6b6b;
+  --ambar: #ffb347;
+  --borde: rgba(70, 160, 225, 0.28);
+  --borde-suave: rgba(70, 160, 225, 0.2);
+  --panel: linear-gradient(160deg, rgba(12, 36, 62, 0.6), rgba(6, 16, 30, 0.45));
+  --f-display: 'Orbitron', sans-serif;
+  --f-mono: 'Share Tech Mono', monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root { height: 100%; }
+
+body {
+  background: var(--fondo);
+  color: var(--texto);
+  font-family: var(--f-mono);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Animaciones base ---------- */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spinR { to { transform: rotate(-360deg); } }
+@keyframes coreGlow {
+  0%, 100% { box-shadow: 0 0 60px 8px rgba(40, 180, 255, 0.45); transform: translate(-50%, -50%) scale(1); }
+  50% { box-shadow: 0 0 96px 18px rgba(70, 205, 255, 0.72); transform: translate(-50%, -50%) scale(1.035); }
+}
+@keyframes bloomPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 0.8; } }
+@keyframes sweep { to { transform: translate(-50%, -50%) rotate(360deg); } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+/* ---------- Escenario escalado (uniforme) ---------- */
+.visor { position: fixed; inset: 0; background: var(--fondo); }
+
+.escenario {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: var(--fondo);
+}
+
+.ambiente {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    120% 120% at 27% 50%,
+    rgba(14, 54, 96, 0.55) 0%,
+    rgba(6, 20, 40, 0.35) 34%,
+    rgba(3, 8, 16, 0.9) 72%,
+    #03060d 100%
+  );
+}
+
+.grilla-fondo {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(60, 150, 220, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(60, 150, 220, 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(circle at 50% 50%, #000 55%, transparent 100%);
+  -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 55%, transparent 100%);
+}
+
+.bloom {
+  position: absolute;
+  left: 520px;
+  top: 540px;
+  width: 1040px;
+  height: 1040px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(40, 170, 255, 0.42) 0%,
+    rgba(24, 110, 190, 0.22) 26%,
+    rgba(10, 50, 100, 0.08) 46%,
+    transparent 62%
+  );
+  filter: blur(6px);
+  animation: bloomPulse 5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Colores utilitarios */
+.t-cian { color: var(--cian-claro); }
+.t-verde { color: var(--verde); }
+.t-rojo { color: var(--rojo); }
+.t-dim { color: var(--dim); }
+.t-apagado { color: var(--apagado); }
+.t-marca { color: #8fd4ff; letter-spacing: 3px; }
+.empuje { margin-left: auto; }
+
+/* ---------- Tira superior ---------- */
+.tira-sup {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  background: linear-gradient(180deg, rgba(8, 26, 46, 0.85), rgba(5, 14, 26, 0.55));
+  border-bottom: 1px solid var(--borde-suave);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #6db9e6;
+  z-index: 6;
+  white-space: nowrap;
+}
+.t-sep { width: 1px; height: 12px; background: rgba(70, 160, 225, 0.35); flex: none; }
+.t-fecha {
+  color: #eafcff;
+  font-weight: bold;
+  letter-spacing: 2px;
+}
+
+.punto-vivo {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--verde);
+  box-shadow: 0 0 8px var(--verde);
+  animation: blink 2s infinite;
+  flex: none;
+}
+.punto-vivo.rojo { background: var(--rojo); box-shadow: 0 0 8px var(--rojo); }
+
+/* ---------- Globo + GEO-SYNC + sensores ---------- */
+.bloque-globo { position: absolute; left: 32px; top: 56px; width: 158px; z-index: 4; }
+.globo { display: block; filter: drop-shadow(0 0 5px rgba(40, 170, 255, 0.5)); }
+
+.bloque-geo { position: absolute; left: 32px; top: 228px; z-index: 4; }
+.geo-titulo { font-size: 11px; letter-spacing: 2px; color: var(--cian-claro); margin-bottom: 6px; }
+.geo-coord { font-size: 11px; letter-spacing: 1px; color: #cfeeff; line-height: 1.7; }
+.geo-etq { color: var(--apagado); letter-spacing: 2px; }
+
+.bloque-sensores {
+  position: absolute;
+  left: 32px;
+  top: 310px;
+  width: 195px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--apagado);
+  line-height: 1.85;
+  z-index: 4;
+}
+.sensores-titulo {
+  color: #7fcff0;
+  letter-spacing: 2px;
+  border-bottom: 1px solid rgba(70, 160, 225, 0.25);
+  padding-bottom: 3px;
+  margin-bottom: 5px;
+}
+.sensor-gpu {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(70, 160, 225, 0.18);
+  font-size: 8px;
+  line-height: 1.5;
+  color: #3f7ca0;
+  word-break: break-word;
+}
+
+/* Chip-barra de los sensores (GPS / batería) */
+.chip {
+  display: inline-block;
+  width: 34px;
+  height: 7px;
+  margin-left: 7px;
+  border: 1px solid rgba(95, 227, 160, 0.45);
+  background: rgba(95, 227, 160, 0.08);
+  vertical-align: middle;
+}
+.chip > span {
+  display: block;
+  height: 100%;
+  background: var(--verde);
+  box-shadow: 0 0 6px rgba(95, 227, 160, 0.7);
+}
+
+/* ---------- Dock lateral ---------- */
+.dock {
+  position: absolute;
+  left: 32px;
+  top: 636px;
+  width: 54px;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  border: 1px solid var(--borde);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(14, 40, 68, 0.55), rgba(6, 16, 30, 0.6));
+  box-shadow: inset 0 0 16px rgba(10, 110, 190, 0.12);
+  z-index: 6;
+}
+.dock button {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: none;
+  color: #9fd8f5;
+  cursor: pointer;
+}
+.dock button:hover { color: #eafcff; border-color: var(--borde); }
+.dock button.activo {
+  color: #ffffff;
+  border-color: var(--cian);
+  background: rgba(40, 130, 200, 0.25);
+  box-shadow: 0 0 10px rgba(74, 214, 255, 0.4), inset 0 0 8px rgba(74, 214, 255, 0.25);
+}
+.dock .badge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cian);
+  box-shadow: 0 0 6px var(--cian);
+}
+
+/* ============================================================
+   ARC REACTOR — rediseño fiel al mockup:
+   · aro exterior punteado fino
+   · ARO SEGMENTADO GRUESO brillante (la firma del diseño)
+   · aro de ticks medianos
+   · corona densa de ticks largos pegada al núcleo
+   · núcleo oscuro con esfera de partículas y borde luminoso
+   ============================================================ */
+.titulo-core {
+  position: absolute;
+  left: 520px;
+  top: 196px;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 4;
+}
+.core-nombre {
+  font-family: var(--f-display);
+  font-weight: 600;
+  font-size: 25px;
+  letter-spacing: 8px;
+  color: #eafcff;
+  text-shadow: 0 0 14px rgba(40, 180, 255, 0.65);
+  white-space: nowrap;
+}
+.core-sub {
+  margin-top: 7px;
+  font-size: 11px;
+  letter-spacing: 5px;
+  color: var(--dim);
+}
+
+.zona-reactor {
+  position: absolute;
+  left: 520px;
+  top: 540px;
+  width: 640px;
+  height: 640px;
+  transform: translate(-50%, -50%) scale(0.94);
+  z-index: 2;
+}
+
+.reactor {
+  position: absolute;
+  inset: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  outline: none;
+}
+.reactor:focus-visible { outline: 2px solid var(--cian); outline-offset: -60px; border-radius: 50%; }
+
+/* Cada aro: contenedor centrado + hijo con el gradiente que rota */
+.aro { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+.aro > div { width: 100%; height: 100%; border-radius: 50%; }
+
+/* Aro exterior punteado fino */
+.aro-ticks-finos { width: 600px; height: 600px; }
+.aro-ticks-finos > div {
+  background: repeating-conic-gradient(from 0deg, rgba(130, 215, 255, 0.55) 0deg 0.7deg, transparent 0.7deg 4.5deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 48.6%, #000 48.9% 50%, transparent 50.4%);
+  mask: radial-gradient(circle, transparent 0 48.6%, #000 48.9% 50%, transparent 50.4%);
+  animation: spinR 120s linear infinite;
+}
+
+/* ARO SEGMENTADO GRUESO — la firma del mockup */
+.aro-seg-ext { width: 512px; height: 512px; }
+.aro-seg-ext > div {
+  background: conic-gradient(from -30deg,
+    rgba(90, 220, 255, 0.95) 0deg 74deg,   transparent 74deg 96deg,
+    rgba(90, 220, 255, 0.95) 96deg 158deg,  transparent 158deg 172deg,
+    rgba(90, 220, 255, 0.95) 172deg 268deg, transparent 268deg 288deg,
+    rgba(90, 220, 255, 0.95) 288deg 334deg, transparent 334deg 360deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 45.2%, #000 45.6% 49.8%, transparent 50.2%);
+  mask: radial-gradient(circle, transparent 0 45.2%, #000 45.6% 49.8%, transparent 50.2%);
+  filter: drop-shadow(0 0 10px rgba(70, 200, 255, 0.85));
+  animation: spin 46s linear infinite;
+}
+
+/* Aro de ticks medianos */
+.aro-ticks-gruesos { width: 432px; height: 432px; }
+.aro-ticks-gruesos > div {
+  background: repeating-conic-gradient(from 0deg, rgba(150, 225, 255, 0.7) 0deg 1.3deg, transparent 1.3deg 7deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 44.5%, #000 45.2% 50%, transparent 50.4%);
+  mask: radial-gradient(circle, transparent 0 44.5%, #000 45.2% 50%, transparent 50.4%);
+}
+
+/* Corona densa de ticks largos (pegada al núcleo) */
+.aro-engranaje { width: 372px; height: 372px; }
+.aro-engranaje > div {
+  background: repeating-conic-gradient(from 0deg, rgba(120, 215, 255, 0.55) 0deg 0.85deg, transparent 0.85deg 2.7deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 38%, #000 39% 50%, transparent 50.4%);
+  mask: radial-gradient(circle, transparent 0 38%, #000 39% 50%, transparent 50.4%);
+  filter: drop-shadow(0 0 3px rgba(40, 180, 255, 0.5));
+  animation: spin 70s linear infinite;
+}
+
+.aro-linea {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.aro-linea-ext {
+  width: 338px;
+  height: 338px;
+  border: 1px solid rgba(120, 215, 255, 0.55);
+  box-shadow: 0 0 14px rgba(40, 180, 255, 0.4), inset 0 0 14px rgba(40, 180, 255, 0.2);
+}
+.aro-linea-int {
+  width: 292px;
+  height: 292px;
+  border: 1px solid rgba(130, 220, 255, 0.3);
+}
+
+/* Arcos de acento sutiles (detalle fino) */
+.aro-seg-int { width: 324px; height: 324px; }
+.aro-seg-int > div {
+  background: conic-gradient(from 200deg,
+    rgba(90, 220, 255, 0.4) 0deg 60deg, transparent 60deg 140deg,
+    rgba(90, 220, 255, 0.4) 140deg 200deg, transparent 200deg 300deg,
+    rgba(90, 220, 255, 0.4) 300deg 360deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 48%, #000 48.4% 50%, transparent 50.4%);
+  mask: radial-gradient(circle, transparent 0 48%, #000 48.4% 50%, transparent 50.4%);
+  animation: spinR 30s linear infinite;
+}
+
+.aro-guiones { width: 308px; height: 308px; }
+.aro-guiones > div {
+  background: repeating-conic-gradient(from 0deg, rgba(150, 230, 255, 0.3) 0deg 0.8deg, transparent 0.8deg 3.2deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 48.4%, #000 48.8% 50%, transparent 50.4%);
+  mask: radial-gradient(circle, transparent 0 48.4%, #000 48.8% 50%, transparent 50.4%);
+  animation: spin 90s linear infinite;
+}
+
+/* Halo suave detrás del núcleo */
+.nucleo-glow {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 330px;
+  height: 330px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(30, 120, 200, 0.4) 0%, rgba(40, 150, 235, 0.28) 45%, rgba(14, 80, 140, 0.12) 66%, transparent 78%);
+  filter: blur(2px);
+  animation: coreGlow 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Núcleo oscuro con esfera de partículas (como el mockup) */
+.nucleo-brillo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 296px;
+  height: 296px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 42%, #0d2b4a 0%, #081a30 48%, #050f1e 78%);
+  border: 1px solid rgba(120, 215, 255, 0.35);
+  box-shadow:
+    0 0 42px 8px rgba(60, 180, 255, 0.45),
+    inset 0 0 44px rgba(20, 90, 160, 0.55),
+    inset 0 0 10px rgba(90, 205, 255, 0.35);
+  pointer-events: none;
+  overflow: hidden;
+}
+/* Capas de partículas dentro del núcleo */
+.nucleo-brillo::before,
+.nucleo-brillo::after {
+  content: '';
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background-image: radial-gradient(rgba(160, 225, 255, 0.55) 1px, transparent 1.5px);
+  background-size: 9px 9px;
+  -webkit-mask: radial-gradient(circle, #000 0 55%, transparent 74%);
+  mask: radial-gradient(circle, #000 0 55%, transparent 74%);
+  opacity: 0.5;
+}
+.nucleo-brillo::after {
+  inset: 14%;
+  background-size: 14px 14px;
+  background-position: 4px 6px;
+  opacity: 0.3;
+}
+
+.nucleo-lectura {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #eafcff;
+  z-index: 2;
+  pointer-events: none;
+}
+.nucleo-estado {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 21px;
+  letter-spacing: 4px;
+  color: #f2fcff;
+  text-shadow: 0 0 12px rgba(120, 220, 255, 0.8);
+  white-space: nowrap;
+}
+.nucleo-sub { font-size: 9px; letter-spacing: 3px; color: #7fcff0; margin-top: 6px; }
+.nucleo-onda { margin-top: 8px; color: rgba(140, 220, 255, 0.75); }
+
+/* Barrido de radar (sutil, dentro del núcleo) */
+.barrido {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 300px;
+  height: 300px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(90, 220, 255, 0.16) 0deg, transparent 40deg 360deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 30%, #000 31% 49%, transparent 50%);
+  mask: radial-gradient(circle, transparent 0 30%, #000 31% 49%, transparent 50%);
+  animation: sweep 7s linear infinite;
+  pointer-events: none;
+}
+
+/* Reacción del reactor al estado real de Jarvis */
+.estado-ESCUCHANDO .aro-engranaje > div { animation-duration: 9s; }
+.estado-ESCUCHANDO .aro-seg-ext > div { animation-duration: 18s; }
+.estado-ESCUCHANDO .barrido { animation-duration: 2.2s; }
+.estado-ESCUCHANDO .nucleo-glow { animation-duration: 1.6s; }
+
+.estado-PROCESANDO .nucleo-brillo {
+  border-color: rgba(255, 200, 120, 0.45);
+  box-shadow:
+    0 0 42px 8px rgba(255, 190, 100, 0.5),
+    inset 0 0 44px rgba(140, 80, 14, 0.5),
+    inset 0 0 10px rgba(255, 200, 120, 0.35);
+}
+.estado-PROCESANDO .nucleo-glow {
+  background: radial-gradient(circle, rgba(220, 150, 40, 0.4) 0%, rgba(250, 180, 60, 0.28) 45%, rgba(140, 80, 14, 0.12) 66%, transparent 78%);
+  animation-duration: 1.2s;
+}
+.estado-PROCESANDO .aro-seg-int > div { animation-duration: 6s; }
+
+.estado-HABLANDO .nucleo-glow { animation-duration: 1.3s; }
+.estado-HABLANDO .aro-seg-ext > div { animation-duration: 12s; }
+
+/* Lectura + transcript (posición y tamaño del mockup) */
+.lectura-reactor {
+  position: absolute;
+  left: 520px;
+  top: 826px;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 4;
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.transcript {
+  position: absolute;
+  left: 520px;
+  top: 852px;
+  transform: translateX(-50%);
+  width: 560px;
+  min-height: 58px;
+  padding: 12px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: inset 0 0 18px rgba(10, 110, 190, 0.1);
+  font-size: 15px;
+  line-height: 1.4;
+  color: rgba(234, 252, 255, 0.88);
+  text-shadow: 0 0 10px rgba(60, 200, 255, 0.35);
+  z-index: 4;
+}
+
+/* ---------- Celdas ---------- */
+.celda {
+  position: relative;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  box-shadow: inset 0 0 18px rgba(10, 110, 190, 0.1);
+  z-index: 4;
+}
+
+.celda-cab {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--borde-suave);
+  background: rgba(20, 52, 86, 0.4);
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #cdeeff;
+  z-index: 2;
+}
+.celda-extra { font-size: 9px; letter-spacing: 1px; }
+
+.celda-cuerpo { position: absolute; top: 28px; left: 0; right: 0; bottom: 0; }
+.celda-cuerpo.sin-cab { top: 0; }
+
+.celda-pie {
+  position: absolute;
+  bottom: 7px;
+  left: 14px;
+  right: 14px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--apagado);
+  z-index: 2;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.grafico { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* Las celdas con pie dejan aire abajo para el texto */
+.p-red .grafico { bottom: 22px; height: calc(100% - 22px); }
+
+/* ---------- Posiciones de los paneles (como la referencia) ---------- */
+.p-consola { position: absolute; left: 735px; top: 88px; width: 648px; height: 708px; }
+.p-red     { position: absolute; left: 1397px; top: 88px;  width: 487px; height: 190px; }
+.p-audio   { position: absolute; left: 1397px; top: 296px; width: 487px; height: 122px; }
+.p-reloj   { position: absolute; left: 1397px; top: 436px; width: 487px; height: 360px; }
+.p-feed    { position: absolute; left: 735px; top: 814px; width: 1149px; height: 130px; }
+
+/* ---------- Consola de misión ---------- */
+/* Franja hachada decorativa bajo el encabezado (como el mockup) */
+.hachas {
+  position: absolute;
+  left: 18px;
+  top: 12px;
+  width: 168px;
+  height: 8px;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(90, 205, 255, 0.35) 0 2px,
+    transparent 2px 6px
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+.p-consola .trazas {
+  position: absolute;
+  left: 30px;
+  top: 150px;
+  width: 580px;
+  height: 470px;
+  overflow: visible;
+  z-index: 0;
+  filter: drop-shadow(0 0 3px rgba(40, 180, 255, 0.55));
+  pointer-events: none;
+}
+
+.consola {
+  position: absolute;
+  inset: 0;
+  padding: 28px 18px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  z-index: 1;
+  scrollbar-width: thin;
+  scrollbar-color: var(--apagado) transparent;
+}
+.linea { display: block; line-height: 1.55; }
+.linea .hora { color: var(--apagado); margin-right: 8px; font-size: 11px; }
+.linea .quien {
+  font-family: var(--f-display);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  margin-right: 9px;
+  padding: 2px 8px;
+  border: 1px solid var(--borde);
+  border-radius: 3px;
+}
+.quien-VOS .quien { color: #eafcff; }
+.quien-JARVIS .quien { color: var(--cian); border-color: var(--cian); }
+.quien-SISTEMA .quien { color: var(--cian-claro); border-color: rgba(90, 205, 255, 0.55); }
+.quien-JARVIS .texto { color: var(--cian-claro); }
+.quien-SISTEMA .texto { color: #dff4ff; opacity: 0.9; }
+
+.btn-purgar {
+  font-family: var(--f-display);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--cian-claro);
+  background: rgba(40, 130, 200, 0.12);
+  border: 1px solid rgba(90, 205, 255, 0.55);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.btn-purgar:hover { background: rgba(74, 214, 255, 0.22); color: #ffffff; }
+
+/* ---------- Clúster de reloj ---------- */
+.p-reloj {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 24px;
+  box-shadow: inset 0 0 26px rgba(10, 110, 190, 0.12);
+}
+
+.reloj-hms {
+  font-family: var(--f-display);
+  font-weight: 700;
+  font-size: 76px;
+  line-height: 1;
+  color: #eaf6ff;
+  letter-spacing: 2px;
+  text-shadow: 0 0 20px rgba(60, 200, 255, 0.55);
+}
+.reloj-sep { color: var(--cian-medio); animation: blink 1.4s infinite; }
+.reloj-seg { font-size: 30px; color: var(--cian-medio); margin-left: 8px; }
+.reloj-fecha { font-size: 12px; letter-spacing: 6px; color: #7fcff0; margin-top: 2px; }
+
+.reloj-fila {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  margin-top: 12px;
+  width: 100%;
+}
+
+.mini-reactor { position: relative; width: 118px; height: 118px; flex: none; }
+.mini-aro-ext {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(140, 220, 255, 0.5) 0deg 0.5deg, transparent 0.5deg 4deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 44%, #000 45% 50%, transparent 50.5%);
+  mask: radial-gradient(circle, transparent 0 44%, #000 45% 50%, transparent 50.5%);
+  animation: spin 30s linear infinite;
+}
+.mini-aro-int {
+  position: absolute;
+  inset: 13px;
+  border-radius: 50%;
+  background: conic-gradient(from 40deg, rgba(90, 220, 255, 0.9) 0 100deg, transparent 100deg 150deg, rgba(90, 220, 255, 0.9) 150deg 260deg, transparent 260deg 300deg, rgba(90, 220, 255, 0.9) 300deg 360deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 42%, #000 43% 50%, transparent 50.5%);
+  mask: radial-gradient(circle, transparent 0 42%, #000 43% 50%, transparent 50.5%);
+  animation: spinR 18s linear infinite;
+}
+.mini-nucleo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffffff 0%, #bff0ff 34%, #46c6ff 66%, rgba(40, 170, 240, 0) 100%);
+  box-shadow: 0 0 24px 5px rgba(120, 225, 255, 0.7);
+  animation: coreGlow 4s ease-in-out infinite;
+}
+.mini-reactor.estado-ESCUCHANDO .mini-nucleo { animation-duration: 1.4s; }
+.mini-reactor.estado-PROCESANDO .mini-nucleo {
+  background: radial-gradient(circle, #ffffff 0%, #ffe9c9 34%, #ffb347 66%, rgba(255, 179, 71, 0) 100%);
+}
+.mini-reactor.estado-HABLANDO .mini-aro-int { animation-duration: 5s; }
+
+.gauge-wrap { text-align: center; }
+.gauge { position: relative; width: 68px; height: 68px; }
+.gauge-anillo {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 0 66%, #000 68%);
+  mask: radial-gradient(circle, transparent 0 66%, #000 68%);
+  transition: background 0.6s ease;
+}
+.gauge-centro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--f-display);
+  font-size: 13px;
+  color: #eafcff;
+}
+.gauge-etq { font-size: 9px; letter-spacing: 2px; color: var(--dim); margin-top: 6px; }
+
+/* ---------- Panel FEED ---------- */
+.p-feed { display: flex; align-items: stretch; }
+
+.feed-tag {
+  flex: none;
+  width: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 120, 200, 0.3);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #cdeeff;
+  border-right: 1px solid rgba(70, 160, 225, 0.3);
+}
+
+.feed-lista {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 18px;
+  overflow: hidden;
+  min-width: 0;
+}
+.feed-lista.expandido { justify-content: flex-start; overflow-y: auto; scrollbar-width: thin; }
+
+.feed-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 1px;
+  color: #9fd8f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-flecha { color: var(--cian); font-size: 9px; flex: none; }
+.feed-item .hora { color: var(--apagado); flex: none; }
+.feed-quien { color: var(--cian-claro); letter-spacing: 2px; flex: none; }
+.feed-item.quien-VOS .feed-quien { color: #eafcff; }
+.feed-texto { overflow: hidden; text-overflow: ellipsis; }
+
+.feed-vertodo {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-family: var(--f-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  z-index: 2;
+}
+.feed-vertodo:hover { color: #eafcff; }
+
+/* ---------- Barra de tareas ---------- */
+.barra-tareas {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  background: linear-gradient(180deg, rgba(8, 26, 46, 0.9), rgba(4, 10, 20, 0.95));
+  border-top: 1px solid var(--borde);
+  z-index: 7;
+}
+
+.bt-logo {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(90, 205, 255, 0.4);
+  border-radius: 7px;
+  color: var(--cian-claro);
+  box-shadow: inset 0 0 8px rgba(40, 180, 255, 0.25);
+  flex: none;
+}
+
+.bt-boton {
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(70, 160, 225, 0.3);
+  border-radius: 7px;
+  background: linear-gradient(160deg, rgba(30, 90, 150, 0.5), rgba(10, 30, 55, 0.5));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9fd8f5;
+  cursor: pointer;
+  flex: none;
+}
+.bt-boton:hover { border-color: var(--cian); color: #dff4ff; }
+.bt-boton.activo {
+  border-color: var(--cian);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(74, 214, 255, 0.5), inset 0 0 8px rgba(74, 214, 255, 0.3);
+}
+
+.cmd {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: rgba(10, 28, 52, 0.6);
+  border: 1px solid var(--borde);
+  border-radius: 7px;
+  margin-left: 6px;
+}
+.cmd:focus-within { border-color: var(--cian); }
+.cmd-prompt { color: var(--cian); font-size: 13px; flex: none; }
+.cmd input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: none;
+  border: none;
+  outline: none;
+  color: #eafcff;
+  font-family: var(--f-mono);
+  font-size: 13px;
+  letter-spacing: 1px;
+}
+.cmd input::placeholder { color: rgba(140, 200, 235, 0.4); }
+
+.bt-enviar {
+  font-family: var(--f-display);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: #cfeeff;
+  background: linear-gradient(160deg, rgba(30, 90, 150, 0.6), rgba(14, 44, 80, 0.6));
+  border: 1px solid rgba(90, 205, 255, 0.5);
+  border-radius: 7px;
+  height: 32px;
+  padding: 0 22px;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(60, 180, 255, 0.25), inset 0 0 10px rgba(60, 180, 255, 0.15);
+  flex: none;
+}
+.bt-enviar:hover { color: #ffffff; border-color: var(--cian); box-shadow: 0 0 16px rgba(85, 214, 255, 0.5); }
+
+.bt-dato { font-size: 10px; letter-spacing: 1px; color: var(--apagado); white-space: nowrap; flex: none; margin-left: 4px; }
+.bt-sep { width: 1px; height: 18px; background: rgba(70, 160, 225, 0.3); flex: none; }
+.bt-hora { font-family: var(--f-display); font-size: 15px; color: #eafcff; letter-spacing: 1px; flex: none; }
+.bt-fecha { font-size: 10px; color: var(--dim); flex: none; }
+
+/* ---------- Overlays ---------- */
+.scanlines {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0) 0px, rgba(0, 0, 0, 0) 2px, rgba(0, 0, 0, 0.12) 3px);
+  pointer-events: none;
+  z-index: 20;
+  mix-blend-mode: multiply;
+}
+.vineta {
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 200px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+  z-index: 19;
+}
+
+/* === Layout expandido: reactor más a la izquierda, consola más a la derecha === */
+.bloom,
+.titulo-core,
+.zona-reactor,
+.lectura-reactor,
+.transcript {
+  left: 470px;
+}
+
+.p-consola { left: 830px; width: 560px; }
+.p-feed    { left: 830px; width: 1054px; }
+.p-consola .trazas { width: 500px; }
+
+/* === Sin dock lateral + barra de comando más grande === */
+.dock { display: none; }
+
+.barra-tareas { height: 66px; gap: 12px; padding: 0 22px; }
+.bt-logo, .bt-boton { width: 38px; height: 38px; }
+.cmd { height: 46px; border-radius: 9px; padding: 0 16px; }
+.cmd-prompt { font-size: 17px; }
+.cmd input { font-size: 17px; letter-spacing: 1.5px; }
+.cmd input::placeholder { color: rgba(150, 210, 240, 0.55); }
+.bt-enviar { height: 46px; font-size: 12px; padding: 0 30px; }
+.bt-hora { font-size: 18px; }
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .aro > div, .barrido, .nucleo-glow, .mini-aro-ext, .mini-aro-int, .mini-nucleo,
+  .bloom, .reloj-sep, .punto-vivo {
+    animation: none !important;
+  }
+}
+
