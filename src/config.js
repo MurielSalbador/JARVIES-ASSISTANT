@@ -2,14 +2,15 @@
 //  CONFIGURACIÓN DE J.A.R.V.I.S.
 //  En local usa los valores de respaldo; en Vercel lee las
 //  variables de entorno (Settings -> Environment Variables):
-//    VITE_MAKE_WEBHOOK_URL
+//    VITE_N8N_WEBHOOK_URL
 //    VITE_GROQ_API_KEY
 // ============================================================
 
-// Webhook del escenario "Jarvis - Acciones" en Make
+// Webhook del workflow "jarvis-acciones" en n8n (self-hosted,
+// expuesto a internet con el túnel de ngrok)
 export const WEBHOOK_URL =
-  import.meta.env.VITE_MAKE_WEBHOOK_URL ||
-  'https://hook.us2.make.com/0f48ralthjnc5fvijwrp0ohnxjlfdn1l';
+  import.meta.env.VITE_N8N_WEBHOOK_URL ||
+  'https://lard-alone-outpost.ngrok-free.dev/webhook/jarvis-acciones';
 
 // Key de Groq: transcripción (Whisper) + clasificador + charla.
 // SIN valor de respaldo a propósito: si se commitea una key a un

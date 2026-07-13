@@ -21,7 +21,7 @@ import { OPERADOR } from './config';
 //  consola de misión al centro, columna derecha (red / audio /
 //  reloj), panel FEED abajo y dock lateral. Todos los paneles
 //  muestran datos reales: sistema (useSystemMetrics), audio
-//  (useAudioAnalyser) y el cerebro (useJarvis -> Make -> Groq).
+//  (useAudioAnalyser) y el cerebro (useJarvis -> Groq / n8n).
 // ============================================================
 
 const ETIQUETA_ESTADO = {
@@ -160,7 +160,7 @@ export default function App() {
           </span>
           <span className="t-sep" />
           <span>
-            ENLACE MAKE //{' '}
+            ENLACE N8N //{' '}
             <span className={red.uplink === 'ERROR' ? 't-rojo' : 't-verde'}>{red.uplink}</span>
           </span>
           <span className="empuje t-apagado">

@@ -15,7 +15,8 @@ Corre en el navegador, con cerebro de IA real y telemetría en vivo.
 ![Vite](https://img.shields.io/badge/Vite_5-0a1a2f?style=for-the-badge&logo=vite&logoColor=56c8ff)
 ![Groq](https://img.shields.io/badge/Groq_·_GPT--OSS--120B-0a1a2f?style=for-the-badge&logo=openai&logoColor=56c8ff)
 ![Whisper](https://img.shields.io/badge/Whisper_v3_Turbo-0a1a2f?style=for-the-badge&logo=soundcharts&logoColor=56c8ff)
-![Make](https://img.shields.io/badge/Make_(Integromat)-0a1a2f?style=for-the-badge&logo=make&logoColor=56c8ff)
+![n8n](https://img.shields.io/badge/n8n_self--hosted-0a1a2f?style=for-the-badge&logo=n8n&logoColor=56c8ff)
+![ngrok](https://img.shields.io/badge/ngrok_tunnel-0a1a2f?style=for-the-badge&logo=ngrok&logoColor=56c8ff)
 ![Vosk](https://img.shields.io/badge/Vosk_WASM_·_Wake_Word-0a1a2f?style=for-the-badge&logo=webassembly&logoColor=56c8ff)
 
 <br/>
@@ -46,7 +47,7 @@ No es una demo con datos falsos: **cada panel del HUD muestra telemetría real**
 | ✍️ **Te transcribe** | Manda el audio a **Whisper Large v3 Turbo** en Groq — transcripción en español casi instantánea |
 | 🧭 **Clasifica la intención** | Un clasificador LLM decide en milisegundos: ¿es `CHARLA`, `CLIMA` o `BUSCAR`? |
 | 💬 **Conversa** | La charla va directo del navegador a **Groq (`gpt-oss-120b`)** — cero operaciones de Make gastadas |
-| 🌐 **Ejecuta acciones** | Clima y búsquedas en internet se derivan al escenario **"Jarvis - Acciones"** en Make vía webhook |
+| 🌐 **Ejecuta acciones** | Clima y búsquedas en internet se derivan al workflow **"jarvis-acciones"** en **n8n** (self-hosted, expuesto con ngrok) vía webhook |
 | 🔊 **Te responde hablando** | Síntesis de voz del sistema (`speechSynthesis`) con voz masculina en español, blindada contra los bugs de Chrome |
 | 🧠 **Tiene memoria** | Guarda hasta 40 mensajes en `localStorage` y manda los últimos 12 como contexto — se acuerda de la conversación entre sesiones |
 | 👂 **Wake word "Jarvis"** | Reconocimiento **100 % local** con Vosk (WebAssembly): decís *"Jarvis"* y se despierta solo. El audio nunca sale de tu máquina |
@@ -71,8 +72,8 @@ flowchart LR
         LLM["gpt-oss-120b<br/>(clasificador + charla)"]
     end
 
-    subgraph MAKE ["🔧 MAKE"]
-        WH["Webhook<br/>'Jarvis - Acciones'"]
+    subgraph N8N ["🔧 N8N (self-hosted · túnel ngrok)"]
+        WH["Webhook<br/>'jarvis-acciones'"]
         ACC["🌤️ Clima · 🔎 Búsquedas"]
     end
 
@@ -95,11 +96,11 @@ flowchart LR
 3. **Transcripción** — el audio viaja a **Whisper (Groq)** y vuelve como texto en español.
 4. **Clasificación** — un LLM con `temperature: 0` responde una sola palabra: `CHARLA`, `CLIMA` o `BUSCAR`.
 5. **Ruteo inteligente** 💡 — acá está el truco de eficiencia:
-   - `CHARLA` → **directo a Groq desde el navegador** (gratis, sin gastar operaciones de Make)
-   - `CLIMA` / `BUSCAR` → **POST al webhook de Make**, que resuelve la acción y devuelve texto plano
+   - `CHARLA` → **directo a Groq desde el navegador** (sin pasar por el servidor de acciones)
+   - `CLIMA` / `BUSCAR` → **POST al webhook de n8n** (corriendo local, expuesto a internet con **ngrok**), que resuelve la acción y devuelve texto plano
 6. **Respuesta hablada** — el texto se lee en voz alta con la mejor voz masculina en español disponible, y se guarda en la memoria de conversación.
 
-> 💰 **Diseño orientado a costo cero:** solo las *acciones* gastan operaciones de Make. Todo lo demás (transcripción, clasificación, charla, wake word, voz) corre gratis en Groq o localmente en tu navegador.
+> 💰 **Diseño orientado a costo cero:** n8n corre **self-hosted en tu propia máquina** (sin límites de operaciones ni planes pagos) y todo lo demás (transcripción, clasificación, charla, wake word, voz) corre gratis en Groq o localmente en tu navegador.
 
 <br/>
 
@@ -127,6 +128,7 @@ flowchart LR
 - [Node.js](https://nodejs.org) **18+** (LTS recomendada)
 - **Google Chrome** (micrófono + síntesis de voz funcionan mejor ahí)
 - Una API key gratuita de [Groq](https://console.groq.com)
+- **n8n** corriendo (local o self-hosted) con el workflow **"jarvis-acciones"** activo, expuesto con [ngrok](https://ngrok.com) si el HUD no corre en la misma red
 
 ### Instalación
 
@@ -136,7 +138,7 @@ npm install
 
 # 2. Configurar credenciales
 cp .env.example .env
-#    → completar VITE_GROQ_API_KEY y VITE_MAKE_WEBHOOK_URL
+#    → completar VITE_GROQ_API_KEY y VITE_N8N_WEBHOOK_URL
 
 # 3. Encender el reactor
 npm run dev
@@ -166,11 +168,11 @@ Abrir **http://localhost:5173** en Chrome y permitir el micrófono cuando lo pid
 
 ```
 src/
-├── config.js                 ← 🔑 webhook de Make, key de Groq, idioma, operador, personalidad
+├── config.js                 ← 🔑 webhook de n8n, key de Groq, idioma, operador, personalidad
 ├── App.jsx                   ← 📟 layout del HUD (escenario 1920×1080 con escala uniforme)
 ├── styles.css                ← 🎨 estética Iron Man (tokens de color y tipografía)
 ├── hooks/
-│   ├── useJarvis.js          ← 🧠 el cerebro: grabar → Whisper → clasificar → Groq/Make → hablar
+│   ├── useJarvis.js          ← 🧠 el cerebro: grabar → Whisper → clasificar → Groq/n8n → hablar
 │   ├── useWakeWord.js        ← 👂 vigilancia "Jarvis" con Vosk (WebAssembly, offline)
 │   ├── useSystemMetrics.js   ← 📊 batería, red, GPS, clima, FPS, memoria, núcleos
 │   └── useAudioAnalyser.js   ← 🎵 waveform en vivo del micrófono
@@ -184,7 +186,7 @@ src/
 
 | Variable | Qué es |
 |---|---|
-| `VITE_MAKE_WEBHOOK_URL` | URL del webhook del escenario **"Jarvis - Acciones"** en Make |
+| `VITE_N8N_WEBHOOK_URL` | URL del webhook del workflow **"jarvis-acciones"** en n8n (túnel de ngrok si es local) |
 | `VITE_GROQ_API_KEY` | Key de Groq — transcripción, clasificador y charla |
 | `IDIOMA` | Idioma de voz y transcripción (`es-AR`) |
 | `OPERADOR` | Tu nombre en el HUD |
@@ -199,7 +201,7 @@ src/
 | UI / HUD | React 18 + Vite 5, CSS puro (sin frameworks) | Gratis |
 | Transcripción | Whisper Large v3 Turbo vía Groq | Gratis |
 | Cerebro / clasificador | `openai/gpt-oss-120b` vía Groq | Gratis |
-| Acciones (clima, búsqueda) | Make — escenario "Jarvis - Acciones" | ~operaciones de Make solo en acciones |
+| Acciones (clima, búsqueda) | n8n self-hosted — workflow "jarvis-acciones" + túnel ngrok | Gratis (corre en tu máquina) |
 | Wake word | Vosk (modelo español ~40 MB, WebAssembly, offline) | Gratis |
 | Voz de salida | `speechSynthesis` del sistema operativo | Gratis |
 | Memoria | `localStorage` del navegador | Gratis |
@@ -211,7 +213,8 @@ src/
 - [x] ~~Wake word "Jarvis"~~ → **hecho con Vosk, 100 % local**
 - [x] ~~Memoria de conversación~~ → **hecho con `localStorage` (40 mensajes)**
 - [x] ~~Clasificador de intenciones~~ → **hecho: CHARLA / CLIMA / BUSCAR**
-- [ ] Más ramas de acciones en Make: tareas, YouTube, agenda, mail
+- [x] ~~Migración de Make a n8n~~ → **hecho: self-hosted, sin límite de operaciones**
+- [ ] Más ramas de acciones en n8n: tareas, YouTube, agenda, mail
 - [ ] Voz premium local (Piper TTS)
 - [ ] Gestos con MediaPipe Hands
 - [ ] Control de domótica

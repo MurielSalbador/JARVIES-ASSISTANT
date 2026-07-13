@@ -39,9 +39,9 @@ export function useJarvis() {
   const [transcript, setTranscript] = useState('');
   const [historial, setHistorial] = useState(cargarHistorial);
   const [log, setLog] = useState([
-    { quien: 'SISTEMA', texto: 'J.A.R.V.I.S. en línea. Cerebro local activo, Make solo para acciones.', hora: hora() },
+    { quien: 'SISTEMA', texto: 'J.A.R.V.I.S. en línea. Cerebro local activo, n8n solo para acciones.', hora: hora() },
   ]);
-  // Estado del enlace con Make (solo cuenta llamadas de ACCIONES)
+  // Estado del enlace con n8n (solo cuenta llamadas de ACCIONES)
   const [red, setRed] = useState({ peticiones: 0, latencia: null, uplink: 'SIN TRÁFICO' });
 
   const detenerRef = useRef(null);
@@ -173,14 +173,17 @@ export function useJarvis() {
     [groqChat]
   );
 
-  // ---- Acciones (navegador -> Make, con la intención ya resuelta) ----
-  const accionMake = useCallback(async (texto, intencion) => {
+  // ---- Acciones (navegador -> n8n, con la intención ya resuelta) ----
+  const accionN8n = useCallback(async (texto, intencion) => {
     const previos = historialRef.current.slice(-MAX_ENVIADOS);
     const historialStr =
       previos.map((m) => JSON.stringify(m)).join(',') + (previos.length ? ',' : '');
     const t0 = performance.now();
     const r = await fetch(WEBHOOK_URL, {
       method: 'POST',
+      // El header evita la página de advertencia que ngrok (plan
+      // gratis) intercala cuando la petición viene de un navegador.
+      headers: { 'ngrok-skip-browser-warning': '1' },
       body: new URLSearchParams({ texto, historial: historialStr, intencion }),
     });
     const respuesta = (await r.text()).trim();
@@ -208,7 +211,7 @@ export function useJarvis() {
         if (intencion === 'CHARLA') {
           respuesta = await charlar(sanitizado);
         } else {
-          respuesta = await accionMake(sanitizado, intencion);
+          respuesta = await accionN8n(sanitizado, intencion);
         }
         if (respuesta) {
           setHistorial((h) =>
@@ -222,14 +225,14 @@ export function useJarvis() {
           setEstado(ESTADOS.HABLANDO);
           await hablar(respuesta);
         } else {
-          addLog('SISTEMA', 'Respuesta vacía. Revisá el escenario de Make o la key de Groq.');
+          addLog('SISTEMA', 'Respuesta vacía. Revisá el workflow de n8n o la key de Groq.');
         }
       } catch (e) {
         addLog('SISTEMA', 'Error: ' + e.message);
       }
       setEstado(ESTADOS.STANDBY);
     },
-    [addLog, clasificar, charlar, accionMake, hablar]
+    [addLog, clasificar, charlar, accionN8n, hablar]
   );
 
   // ---- Borrar la memoria de conversación ----
