@@ -141,7 +141,7 @@ export function useJarvis() {
             {
               role: 'system',
               content:
-                'Sos un clasificador de intenciones. Leé el pedido del usuario (y el contexto previo si existe) y respondé con UNA SOLA palabra en mayúsculas: CLIMA si pregunta por el clima, el tiempo, la temperatura, la lluvia, el viento o el pronóstico. BUSCAR si pide información actual de internet: noticias, precios, cotizaciones, resultados deportivos, datos de personas, empresas o eventos, si dice buscá o buscame, o cualquier dato que cambie con el tiempo o que un modelo de lenguaje no sepa con certeza. CHARLA para todo lo demás. No agregues nada más que la palabra.',
+                'Sos un clasificador de intenciones. Leé el pedido del usuario (y el contexto previo si existe) y respondé con UNA SOLA palabra en mayúsculas: CLIMA si pregunta por el clima, el tiempo, la temperatura, la lluvia, el viento o el pronóstico. AGENDAR si pide crear, agendar o anotar una reunión, un evento, una cita, un recordatorio o un zoom en el calendario. EVENTOS si pregunta qué tiene en la agenda o el calendario, sus próximos eventos, reuniones o compromisos. BUSCAR si pide información actual de internet: noticias, precios, cotizaciones, resultados deportivos, datos de personas, empresas o eventos públicos, si dice buscá o buscame, o cualquier dato que cambie con el tiempo o que un modelo de lenguaje no sepa con certeza. CHARLA para todo lo demás. No agregues nada más que la palabra.',
             },
             ...historialRef.current.slice(-6),
             { role: 'user', content: texto },
@@ -150,6 +150,8 @@ export function useJarvis() {
         );
         const s = salida.toUpperCase();
         if (s.includes('CLIMA')) return 'CLIMA';
+        if (s.includes('AGENDAR')) return 'AGENDAR';
+        if (s.includes('EVENTOS')) return 'EVENTOS';
         if (s.includes('BUSCAR')) return 'BUSCAR';
         return 'CHARLA';
       } catch (e) {
