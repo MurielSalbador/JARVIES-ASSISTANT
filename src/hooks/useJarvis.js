@@ -22,6 +22,12 @@ const SILENCIO_TRAS_HABLA_MS = 2200; // 2,2 s callado después de hablar -> env�
 const ESPERA_SIN_VOZ_MS = 15000;     // 15 s sin detectar voz -> corta
 const MAX_GRABACION_MS = 60000;      // tope duro de grabación
 
+// El clasificador local usa nombres cortos; el Router de n8n espera estos:
+const INTENCION_N8N = {
+  AGENDAR: 'CREAR_EVENTO',
+  EVENTOS: 'BUSCAR_EVENTOS',
+};
+
 const hora = () => new Date().toLocaleTimeString('es-AR', { hour12: false });
 
 const cargarHistorial = () => {
@@ -39,7 +45,7 @@ export function useJarvis() {
   const [transcript, setTranscript] = useState('');
   const [historial, setHistorial] = useState(cargarHistorial);
   const [log, setLog] = useState([
-    { quien: 'SISTEMA', texto: 'J.A.R.V.I.S. en línea. Cerebro local activo, n8n solo para acciones.', hora: hora() },
+    { quien: 'SISTEMA', texto: 'Bienvenido a Neura Sistemas. J.A.R.V.I.S. en línea.', hora: hora() },
   ]);
   // Estado del enlace con n8n (solo cuenta llamadas de ACCIONES)
   const [red, setRed] = useState({ peticiones: 0, latencia: null, uplink: 'SIN TRÁFICO' });
@@ -177,6 +183,7 @@ export function useJarvis() {
 
   // ---- Acciones (navegador -> n8n, con la intención ya resuelta) ----
   const accionN8n = useCallback(async (texto, intencion) => {
+    intencion = INTENCION_N8N[intencion] || intencion;
     const previos = historialRef.current.slice(-MAX_ENVIADOS);
     const historialStr =
       previos.map((m) => JSON.stringify(m)).join(',') + (previos.length ? ',' : '');
