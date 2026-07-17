@@ -202,14 +202,27 @@ export function useJarvis() {
     if (intencion === 'ELIMINAR_EVENTO') {
       // NUNCA inventar un ID ni confirmar un borrado que no ocurrió:
       // solo se manda a n8n un eventId real capturado de una respuesta previa.
-      const conocidos = eventosConocidosRef.current;
-      const ids = Object.keys(conocidos);
+      let conocidos = eventosConocidosRef.current;
+      let ids = Object.keys(conocidos);
       let eventId = '';
+      let textoLista = '';
+
+      // Si no conocemos ningún evento, listamos primero: la llamada
+      // interna a BUSCAR_EVENTOS puebla eventosConocidosRef con los
+      // [id:...] reales que devuelve n8n.
       if (ids.length === 0) {
-        return (
-          'No tengo registrado el identificador de esa reunión. ' +
-          'Pedime primero que liste tus reuniones y después te la elimino.'
-        );
+        try {
+          textoLista = await accionN8n('lista mis reuniones', 'BUSCAR_EVENTOS');
+        } catch (e) {
+          /* si la búsqueda falla, seguimos con el mapa vacío */
+        }
+        conocidos = eventosConocidosRef.current;
+        ids = Object.keys(conocidos);
+      }
+
+      // Si tras buscar sigue sin haber eventos, ahí sí avisamos
+      if (ids.length === 0) {
+        return 'No encontré reuniones en tu calendario para eliminar.';
       }
       if (ids.length === 1) {
         eventId = ids[0];
@@ -240,8 +253,9 @@ export function useJarvis() {
         }
         if (!eventId) {
           return (
-            'Tengo varias reuniones registradas y no sé cuál eliminar, señor. ' +
-            'Indíqueme cuál por su título u horario.'
+            'Tengo varias reuniones y no sé cuál eliminar, señor. ' +
+            'Indíqueme cuál por su título u horario.' +
+            (textoLista ? ' ' + textoLista : '')
           );
         }
       }
