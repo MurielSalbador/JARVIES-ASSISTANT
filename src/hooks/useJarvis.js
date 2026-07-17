@@ -26,6 +26,7 @@ const MAX_GRABACION_MS = 60000;      // tope duro de grabación
 const INTENCION_N8N = {
   AGENDAR: 'CREAR_EVENTO',
   EVENTOS: 'BUSCAR_EVENTOS',
+  ELIMINAR: 'ELIMINAR_EVENTO',
 };
 
 const hora = () => new Date().toLocaleTimeString('es-AR', { hour12: false });
@@ -52,6 +53,8 @@ export function useJarvis() {
 
   const detenerRef = useRef(null);
   const ultimoToqueRef = useRef(0);
+  // ID del último evento que n8n informó (llega como "[id:...]" en la respuesta)
+  const ultimoEventoIdRef = useRef('');
   const estadoRef = useRef(estado);
   estadoRef.current = estado;
   const historialRef = useRef(historial);
@@ -147,7 +150,7 @@ export function useJarvis() {
             {
               role: 'system',
               content:
-                'Sos un clasificador de intenciones. Leé el pedido del usuario (y el contexto previo si existe) y respondé con UNA SOLA palabra en mayúsculas: CLIMA si pregunta por el clima, el tiempo, la temperatura, la lluvia, el viento o el pronóstico. AGENDAR si pide crear, agendar o anotar una reunión, un evento, una cita, un recordatorio o un zoom en el calendario. EVENTOS si pregunta qué tiene en la agenda o el calendario, sus próximos eventos, reuniones o compromisos. BUSCAR si pide información actual de internet: noticias, precios, cotizaciones, resultados deportivos, datos de personas, empresas o eventos públicos, si dice buscá o buscame, o cualquier dato que cambie con el tiempo o que un modelo de lenguaje no sepa con certeza. CHARLA para todo lo demás. No agregues nada más que la palabra.',
+                'Sos un clasificador de intenciones. Leé el pedido del usuario (y el contexto previo si existe) y respondé con UNA SOLA palabra en mayúsculas: CLIMA si pregunta por el clima, el tiempo, la temperatura, la lluvia, el viento o el pronóstico. AGENDAR si pide crear, agendar o anotar una reunión, un evento, una cita, un recordatorio o un zoom en el calendario. EVENTOS si pregunta qué tiene en la agenda o el calendario, sus próximos eventos, reuniones o compromisos. ELIMINAR si pide borrar, eliminar o cancelar un evento, una reunión o una cita del calendario. BUSCAR si pide información actual de internet: noticias, precios, cotizaciones, resultados deportivos, datos de personas, empresas o eventos públicos, si dice buscá o buscame, o cualquier dato que cambie con el tiempo o que un modelo de lenguaje no sepa con certeza. CHARLA para todo lo demás. No agregues nada más que la palabra.',
             },
             ...historialRef.current.slice(-6),
             { role: 'user', content: texto },
@@ -157,6 +160,7 @@ export function useJarvis() {
         const s = salida.toUpperCase();
         if (s.includes('CLIMA')) return 'CLIMA';
         if (s.includes('AGENDAR')) return 'AGENDAR';
+        if (s.includes('ELIMINAR') || s.includes('BORRAR')) return 'ELIMINAR';
         if (s.includes('EVENTOS')) return 'EVENTOS';
         if (s.includes('BUSCAR')) return 'BUSCAR';
         return 'CHARLA';
@@ -187,21 +191,40 @@ export function useJarvis() {
     const previos = historialRef.current.slice(-MAX_ENVIADOS);
     const historialStr =
       previos.map((m) => JSON.stringify(m)).join(',') + (previos.length ? ',' : '');
+
+    const cuerpo = { texto, historial: historialStr, intencion };
+    if (intencion === 'ELIMINAR_EVENTO') {
+      if (!ultimoEventoIdRef.current) {
+        // Sin ID no hay nada que borrar en n8n: avisamos sin gastar la llamada
+        return 'No tengo registrado el identificador de ese evento, señor. Cree o consulte un evento primero y con gusto lo elimino.';
+      }
+      cuerpo.eventId = ultimoEventoIdRef.current;
+    }
+
     const t0 = performance.now();
     const r = await fetch(WEBHOOK_URL, {
       method: 'POST',
       // El header evita la página de advertencia que ngrok (plan
       // gratis) intercala cuando la petición viene de un navegador.
       headers: { 'ngrok-skip-browser-warning': '1' },
-      body: new URLSearchParams({ texto, historial: historialStr, intencion }),
+      body: new URLSearchParams(cuerpo),
     });
-    const respuesta = (await r.text()).trim();
+    let respuesta = (await r.text()).trim();
     const latencia = Math.round(performance.now() - t0);
     setRed((s) => ({
       peticiones: s.peticiones + 1,
       latencia,
       uplink: r.ok ? 'OK · ' + latencia + 'ms' : 'HTTP ' + r.status,
     }));
+
+    // Si la respuesta trae "[id:...]", guardamos el ID para poder
+    // borrar ese evento después, y lo sacamos del texto hablado.
+    const idEncontrado = respuesta.match(/\[id:\s*([^\]]+)\]/i);
+    if (idEncontrado) {
+      ultimoEventoIdRef.current = idEncontrado[1].trim();
+      respuesta = respuesta.replace(/\s*\[id:[^\]]*\]/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+    }
+    if (r.ok && intencion === 'ELIMINAR_EVENTO') ultimoEventoIdRef.current = '';
     return respuesta;
   }, []);
 
