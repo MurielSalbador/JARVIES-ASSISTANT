@@ -29,6 +29,9 @@ const INTENCION_N8N = {
   ELIMINAR: 'ELIMINAR_EVENTO',
 };
 
+// Patrón con el que n8n marca los IDs de Google Calendar en sus respuestas
+const ID_REGEX = /\[id:\s*([^\]]+)\]/g;
+
 const hora = () => new Date().toLocaleTimeString('es-AR', { hour12: false });
 
 const cargarHistorial = () => {
@@ -53,7 +56,10 @@ export function useJarvis() {
 
   const detenerRef = useRef(null);
   const ultimoToqueRef = useRef(0);
-  // ID del último evento que n8n informó (llega como "[id:...]" en la respuesta)
+  // Eventos que n8n informó (llegan como "[id:...]" en las respuestas):
+  // clave = eventId real de Google Calendar, valor = texto de su línea
+  // (título, fecha) para poder desambiguar cuando hay varios.
+  const eventosConocidosRef = useRef({});
   const ultimoEventoIdRef = useRef('');
   const estadoRef = useRef(estado);
   estadoRef.current = estado;
@@ -194,11 +200,52 @@ export function useJarvis() {
 
     const cuerpo = { texto, historial: historialStr, intencion };
     if (intencion === 'ELIMINAR_EVENTO') {
-      if (!ultimoEventoIdRef.current) {
-        // Sin ID no hay nada que borrar en n8n: avisamos sin gastar la llamada
-        return 'No tengo registrado el identificador de ese evento, señor. Cree o consulte un evento primero y con gusto lo elimino.';
+      // NUNCA inventar un ID ni confirmar un borrado que no ocurrió:
+      // solo se manda a n8n un eventId real capturado de una respuesta previa.
+      const conocidos = eventosConocidosRef.current;
+      const ids = Object.keys(conocidos);
+      let eventId = '';
+      if (ids.length === 0) {
+        return (
+          'No tengo registrado el identificador de esa reunión. ' +
+          'Pedime primero que liste tus reuniones y después te la elimino.'
+        );
       }
-      cuerpo.eventId = ultimoEventoIdRef.current;
+      if (ids.length === 1) {
+        eventId = ids[0];
+      } else {
+        // Varios candidatos: Groq elige según el pedido del usuario
+        try {
+          const lista = ids
+            .map((id) => id + ' => ' + (conocidos[id] || '(sin descripción)'))
+            .join('\n');
+          const elegido = (
+            await groqChat(
+              [
+                {
+                  role: 'system',
+                  content:
+                    'Sos un selector de eventos de calendario. Recibís una lista con formato "ID => descripción" y el pedido del usuario para borrar uno. Respondé SOLO con el ID exacto del evento a borrar, sin nada más. Si el pedido se refiere al último evento creado o mencionado, respondé ULTIMO. Si no hay forma de saber cuál quiere borrar, respondé AMBIGUO.',
+                },
+                { role: 'user', content: 'Eventos:\n' + lista + '\n\nPedido: ' + texto },
+              ],
+              { temperature: 0, max_tokens: 60 }
+            )
+          ).trim();
+          if (/\bULTIMO\b/i.test(elegido)) eventId = ultimoEventoIdRef.current;
+          else if (!/\bAMBIGUO\b/i.test(elegido))
+            eventId = ids.find((id) => elegido.includes(id)) || '';
+        } catch (e) {
+          eventId = '';
+        }
+        if (!eventId) {
+          return (
+            'Tengo varias reuniones registradas y no sé cuál eliminar, señor. ' +
+            'Indíqueme cuál por su título u horario.'
+          );
+        }
+      }
+      cuerpo.eventId = eventId;
     }
 
     const t0 = performance.now();
@@ -217,16 +264,41 @@ export function useJarvis() {
       uplink: r.ok ? 'OK · ' + latencia + 'ms' : 'HTTP ' + r.status,
     }));
 
-    // Si la respuesta trae "[id:...]", guardamos el ID para poder
-    // borrar ese evento después, y lo sacamos del texto hablado.
-    const idEncontrado = respuesta.match(/\[id:\s*([^\]]+)\]/i);
-    if (idEncontrado) {
-      ultimoEventoIdRef.current = idEncontrado[1].trim();
-      respuesta = respuesta.replace(/\s*\[id:[^\]]*\]/gi, ' ').replace(/\s{2,}/g, ' ').trim();
+    // Capturar TODOS los "[id:...]" de la respuesta (crear devuelve uno,
+    // buscar devuelve uno por línea) junto con el texto de su línea para
+    // poder desambiguar después, y quitarlos antes de que Jarvis los lea.
+    const idsDeEstaRespuesta = [];
+    respuesta.split(/\r?\n/).forEach((linea) => {
+      for (const m of linea.matchAll(ID_REGEX)) {
+        const id = m[1].trim();
+        if (!id) continue;
+        idsDeEstaRespuesta.push(id);
+        ultimoEventoIdRef.current = id;
+        eventosConocidosRef.current[id] = linea
+          .replace(ID_REGEX, '')
+          .replace(/^\s*-\s*/, '')
+          .trim();
+      }
+    });
+    if (idsDeEstaRespuesta.length) {
+      // Una búsqueda trae la foto actual de la agenda: lo anterior se descarta
+      if (intencion === 'BUSCAR_EVENTOS') {
+        const nuevos = {};
+        idsDeEstaRespuesta.forEach((id) => {
+          nuevos[id] = eventosConocidosRef.current[id];
+        });
+        eventosConocidosRef.current = nuevos;
+      }
+      respuesta = respuesta.replace(ID_REGEX, '').replace(/[^\S\n]{2,}/g, ' ').trim();
     }
-    if (r.ok && intencion === 'ELIMINAR_EVENTO') ultimoEventoIdRef.current = '';
+
+    // Borrado exitoso: ese evento deja de existir, lo olvidamos
+    if (r.ok && intencion === 'ELIMINAR_EVENTO' && cuerpo.eventId) {
+      delete eventosConocidosRef.current[cuerpo.eventId];
+      if (ultimoEventoIdRef.current === cuerpo.eventId) ultimoEventoIdRef.current = '';
+    }
     return respuesta;
-  }, []);
+  }, [groqChat]);
 
   // ---- Orquestador: clasifica y decide adónde va cada pedido ----
   const preguntar = useCallback(
